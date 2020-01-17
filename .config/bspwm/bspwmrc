@@ -1,0 +1,64 @@
+#! /bin/sh
+
+#
+# colors
+#
+
+# source the colors.
+. "${HOME}/.cache/wal/colors.sh"
+
+# Set the border colors.
+bspc config normal_border_color "$color1"
+bspc config active_border_color "$color2"
+bspc config focused_border_color "$color15"
+bspc config presel_feedback_color "$color1"
+
+# load xrdb colors for rofi and possibly other stuff
+xrdb -merge ~/.cache/wal/colors.Xresources
+
+#
+# visuals
+#
+
+bspc config border_width         1
+bspc config window_gap         	 0 
+
+bspc config split_ratio          0.52
+bspc config borderless_monocle   true
+bspc config gapless_monocle      true
+
+#
+# defaults 
+#
+
+bspc monitor -d I II III IV V VI VII VIII IX X
+
+bspc rule -a Gimp desktop='^8' state=floating follow=on
+bspc rule -a Chromium desktop='^2'
+bspc rule -a mplayer2 state=floating
+bspc rule -a Kupfer.py focus=on
+bspc rule -a Screenkey manage=off
+
+#
+# autostart
+#
+
+# kill everything
+pkill sxhkd
+# pkill picom
+pkill compton
+pkill feh
+pkill polybar
+# start everything
+sxhkd &
+# picom --experimental-backends &
+compton &
+feh --bg-fill ~/wallpaper.jpg
+polybar bar &
+
+#
+# other
+#
+
+# floating terminal (not finished)
+bspc rule -a floatty sticky=on state=floating rectangle=800x200+1000+700

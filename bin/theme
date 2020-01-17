@@ -1,0 +1,3 @@
+#!/bin/sh
+# substitute temporary script for saving and selecting wal themes
+~/themes/$1/theme

@@ -1,0 +1,153 @@
+#!/bin/sh
+DIR="$( cd "$( dirname "$0" )" && pwd )"
+
+# default config
+FIELDS=SSID,SECURITY,BARS
+POSITION=0; XOFF=0; YOFF=0
+MAGIC=-4
+FONT="DejaVu Sans Mono 14"
+
+# get current uuid
+CURRUUID=$(nmcli -f UUID,TYPE con show --active | awk '/wifi/ {print $1}')
+
+toggle_wifi () {
+	state=$(nmcli -t -f WIFI g)
+	[ $state = "enabled" ] && toggle="Disable Wi-Fi" || toggle="Enable Wi-Fi"
+	echo $toggle
+}
+
+current_connection () {
+	currssid=$(iwgetid -r)
+	[ "$currssid" != "" ] && currcon="Disconnect from $currssid" || currcon=""
+	echo $currcon
+}
+
+nmcli_list () {
+	# get list of available connections without the active connection (if it's connected)
+	# changed TERM variable to something as nmcli gives simplified output when it's TERM=linux
+	echo "$(TERM=xterm nmcli -f IN-USE,"$FIELDS" device wifi list | sed "s/^IN-USE\s//g" | sed '/*/d' | sed 's/^\s*//')"
+}
+
+count_lines () {
+	echo "$1" | wc -l
+}
+
+widest_line () {
+	echo "$1" | wc -L
+}
+
+rwidth () {
+	rwidth=$(echo "$1" | wc -L)
+[ $rwidth -lt ${#2} ] && rwidth=${#2}
+    [ $rwidth -lt ${#3} ] && rwidth=${#3}
+    let rwidth=$rwidth+$MAGIC
+    echo $rwidth
+}
+
+menu () {
+	# skip disconnect option if not connected
+	if [ "$2" != "" ]; then
+		echo "$1\n\n$2\n$3\nManual Connection"
+	else
+		echo "$1\n\n$3\nManual Connection"
+	fi
+}
+
+rofi_menu () {
+
+	# if wifi is disabled, only propose an option to enable it
+	TOGGLE=$(toggle_wifi)
+	case "$TOGGLE" in
+		*"Enable"*) 
+			WIDTH=$(widest_line "$TOGGLE")
+			echo $TOGGLE | rofi -dmenu -no-custom -p "Wi-Fi" -lines 1 \
+				-location "$POSITION" -yoffset "$YOFF" -xoffset "$XOFF" -font "$FONT" -width $WIDTH
+			return
+			;;
+	esac
+	LIST=$(nmcli_list)
+	CURRCONNECT=$(current_connection)
+
+	MENU=$(menu "$LIST" "$CURRCONNECT" "$TOGGLE")
+
+	LINENUM=$(count_lines "$MENU")
+	WIDTH=$(widest_line "$MENU")
+
+	
+	echo "$MENU" | rofi -dmenu 1 -p "Wi-Fi SSID" -lines $LINENUM \
+		-location "$POSITION" -yoffset "$YOFF" -xoffset "$XOFF" -font "$FONT" -width $WIDTH
+}
+
+get_ssid () {
+    # whole function probably could be done with one call
+    SSID_POS=$(echo "$FIELDS" | sed 's/,/\n/g' | sed -n '/SSID/=')
+
+    # let for arithmetical vars
+    AWKSSIDPOS=$SSID_POS
+
+    # get SSID from AWKSSIDPOS
+    CHSSID=$(echo "$1" | awk -v"AWKSSIDPOS=$AWKSSIDPOS" '{print $AWKSSIDPOS;}')
+    echo "$CHSSID"
+}
+
+cleanup_networks () {
+  nmcli --fields UUID,TIMESTAMP-REAL,DEVICE con show | grep -e '--' |  awk '{print $1}' \
+    | while read line; do nmcli con delete uuid $line; done
+}
+
+main () {
+    if [ -r "$DIR/config" ]; then
+      . "$DIR/config"
+    elif [ -r "$HOME/.config/rofi/wifi" ]; then
+      .	"$HOME/.config/rofi/wifi"
+    else
+      echo "WARNING: config file not found! Using default values."
+    fi
+
+    OPS=$(rofi_menu)
+    CHSSID=$(get_ssid "$OPS")
+
+	case "$OPS" in
+		*"Disable"*) nmcli radio wifi off ;;
+		*"Enable"*) nmcli radio wifi on ;;
+		*"Disconnect"*) nmcli con down uuid $CURRUUID ;;
+		*"Manual"*)
+			MSSID=$(echo -en "" | rofi -dmenu -p "SSID" -mesg \ 
+				"Enter the SSID of the network" -lines 0 -font "$FONT")
+
+			MPASS=$(echo -en "" | rofi -dmenu -password-p "Password" -mesg \
+				"Enter the password of the network" -lines 0 -font "$FONT")
+
+			if [ "$MPASS" = "" ]; then
+				nmcli dev wifi con "$MSSID"
+			elif [ "$MSSID" != "" ] && [ "$MPASS" != "" ]; then
+				nmcli dev wifi con "$MSSID" password "$MPASS"
+			fi
+			;;
+		*)
+			WIFIPASS=""
+			case "$OPS" in
+				*"WPA2"*)
+					WIFIPASS=$(rofi -dmenu -password -p "PASSWORD" \
+						-mesg "Enter the password of the network" -lines 0 -font "$FONT")
+					;;
+				*"WEP"*)
+					WIFIPASS=$(rofi -dmenu -password -p "PASSWORD" \
+						-mesg "Enter the password of the network" -lines 0 -font "$FONT")
+					;;
+			esac
+			if [ "$CHSSID" != "" ]; then
+				if [ "$WIFIPASS" = "" ]; then
+					nmcli dev wifi con "$CHSSID"
+				else
+					nmcli dev wifi con "$CHSSID" password "$WIFIPASS"
+				fi
+			fi
+			;;
+	esac
+}
+
+# clean up obsoleted connections
+# nmcli --fields UUID,TIMESTAMP-REAL,DEVICE con show | grep never |  awk '{print $1}' | while read line; do nmcli con delete uuid $line; done
+
+main

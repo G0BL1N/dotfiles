@@ -1,0 +1,2 @@
+#!/bin/sh
+wal --saturate 1.0 -b 24292B -i ~/themes/forest_vibe/image.jpg 
